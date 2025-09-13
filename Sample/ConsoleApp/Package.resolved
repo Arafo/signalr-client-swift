@@ -1,22 +1,13 @@
 {
-  "originHash" : "f7e7b7b4ae2809875a0feb4a5faf90213865363cd555001d858319eac79381c2",
+  "originHash" : "7e367c751c6dc5816465d0a3eb35252c34fc66a85a40f4c9d46208046f20d44d",
   "pins" : [
     {
-      "identity" : "eventsource",
+      "identity" : "signalr-client-swift",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/inaka/EventSource.git",
+      "location" : "https://github.com/dotnet/signalr-client-swift",
       "state" : {
-        "branch" : "78934b3",
-        "revision" : "78934b361891c7d0fa3d399d128e959f0c94d267"
-      }
-    },
-    {
-      "identity" : "messagepacker",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/hirotakan/MessagePacker.git",
-      "state" : {
-        "revision" : "4d8346c6bc579347e4df0429493760691c5aeca2",
-        "version" : "0.4.7"
+        "branch" : "main",
+        "revision" : "9a1cd1dcbb6918744037f834e411f11e2d15b5d3"
       }
     }
   ],
