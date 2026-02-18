@@ -199,19 +199,24 @@ struct JsonHubProtocol: HubProtocol {
             throw SignalRError.invalidData("Provided type \(targetType) does not conform to Decodable.")
         }
 
-        // Convert dictionary / array to JSON data
-        if (JSONSerialization.isValidJSONObject(anyObject)) {
-            guard let jsonData = try? JSONSerialization.data(withJSONObject: anyObject) else {
-                throw SignalRError.invalidData("Failed to serialize to JSON data.")
+        let jsonData: Data
+        if JSONSerialization.isValidJSONObject(anyObject) {
+            jsonData = try JSONSerialization.data(withJSONObject: anyObject)
+        } else {
+            // Allow primitive JSON fragments (e.g. string/number/bool) in invocation arguments.
+            // This path is needed for topics like Position.z that send a raw base64 string payload.
+            do {
+                jsonData = try JSONSerialization.data(
+                    withJSONObject: anyObject,
+                    options: .fragmentsAllowed
+                )
+            } catch {
+                return anyObject
             }
-
-            let decoder = JSONDecoder()
-            let decodedObject = try decoder.decode(decodableType, from: jsonData)
-            return decodedObject
         }
 
-        // primay elements
-        return anyObject
+        let decoder = JSONDecoder()
+        return try decoder.decode(decodableType, from: jsonData)
     }
 
     private func isNil(_ obj: Any?) -> Bool {
