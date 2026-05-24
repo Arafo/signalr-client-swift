@@ -44,8 +44,14 @@ public struct HttpRequest: Sendable {
     }
 }
 
-public struct HttpResponse {
+public struct HttpResponse: Sendable {
     public let statusCode: Int
+    public let headers: [String: String]
+
+    public init(statusCode: Int, headers: [String: String] = [:]) {
+        self.statusCode = statusCode
+        self.headers = headers
+    }
 }
 
 // MARK: - HttpClient Protocol
@@ -75,7 +81,9 @@ actor DefaultHttpClient: HttpClient {
                 throw SignalRError.invalidResponseType
             }
             let httpResponse = HttpResponse(
-                statusCode: httpURLResponse.statusCode)
+                statusCode: httpURLResponse.statusCode,
+                headers: httpURLResponse.headers
+            )
             let message = try data.convertToStringOrData(
                 transferFormat: request.responseType)
             return (message, httpResponse)
@@ -91,6 +99,22 @@ actor DefaultHttpClient: HttpClient {
                 level: .warning, message: "Error from HTTP request: \(error)"
             )
             throw error
+        }
+    }
+}
+
+private extension HTTPURLResponse {
+    var headers: [String: String] {
+        allHeaderFields.reduce(into: [String: String]()) { headers, field in
+            guard let key = field.key as? String else {
+                return
+            }
+
+            if let value = field.value as? String {
+                headers[key] = value
+            } else {
+                headers[key] = String(describing: field.value)
+            }
         }
     }
 }
