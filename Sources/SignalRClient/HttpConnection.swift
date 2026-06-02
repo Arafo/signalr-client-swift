@@ -295,6 +295,8 @@ actor HttpConnection: ConnectionProtocol {
                 throw SignalRError.negotiationError(exceptionMsg)
             }
 
+            preserveNegotiationCookies(from: response, url: negotiateUrl)
+
             let decoder = JSONDecoder()
             var negotiateResponse = try decoder.decode(NegotiateResponse.self, from: message.converToData())
 
@@ -312,6 +314,15 @@ actor HttpConnection: ConnectionProtocol {
             logger.log(level: .error, message: "\(errorMessage)")
             throw SignalRError.negotiationError(errorMessage)
         }
+    }
+
+    private func preserveNegotiationCookies(from response: HttpResponse, url: String) {
+        guard let negotiateUrl = URL(string: url),
+              let cookieHeader = HttpCookieHeader.negotiateCookieHeader(from: response, url: negotiateUrl) else {
+            return
+        }
+
+        options.headers = HttpCookieHeader.mergeCookieHeader(cookieHeader, into: options.headers)
     }
 
     private func createTransport(url: String, requestedTransport: HttpTransportType?, negotiateResponse: NegotiateResponse?, requestedTransferFormat: TransferFormat) async throws {
