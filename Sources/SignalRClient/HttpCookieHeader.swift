@@ -2,6 +2,9 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 
 import Foundation
+#if canImport(FoundationNetworking)
+    import FoundationNetworking
+#endif
 
 enum HttpCookieHeader {
     static func negotiateCookieHeader(from response: HttpResponse, url: URL) -> String? {
