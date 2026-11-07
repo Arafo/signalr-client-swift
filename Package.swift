@@ -24,7 +24,14 @@ let package = Package(
             ]
         ),
         .testTarget(
-            name: "SignalRClientTests", dependencies: ["SignalRClient"],
+            name: "SignalRClientTests", dependencies: [
+                "SignalRClient",
+                .product(name: "WebSocketKit", package: "websocket-kit"),
+                .product(name: "NIOCore", package: "swift-nio"),
+                .product(name: "NIOPosix", package: "swift-nio"),
+                .product(name: "NIOHTTP1", package: "swift-nio"),
+                .product(name: "NIOWebSocket", package: "swift-nio")
+            ],
             swiftSettings: [
                 //                .enableExperimentalFeature("StrictConcurrency")
             ]

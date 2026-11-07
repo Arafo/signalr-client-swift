@@ -5,6 +5,11 @@
     import FoundationNetworking
 #endif
 import XCTest
+import NIOCore
+import NIOPosix
+import NIOHTTP1
+import NIOWebSocket
+import WebSocketKit
 @testable import SignalRClient
 
 class WebSocketTransportTests: XCTestCase {
@@ -18,6 +23,69 @@ class WebSocketTransportTests: XCTestCase {
         mockWebSocketConnection = MockWebSocketConnection()
         webSocketTransport = WebSocketTransport(accessTokenFactory: nil, logger: logger, headers: [:], websocket: mockWebSocketConnection)
     }
+
+    #if os(Linux)
+    func testReceivePreservesWireOrderWhenHandlerSuspendsAndSocketCloses() async throws {
+        let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
+        let serverSocket = group.next().makePromise(of: WebSocket.self)
+        let server = try await ServerBootstrap(group: group)
+            .childChannelInitializer { channel in
+                let upgrader = NIOWebSocketServerUpgrader(
+                    shouldUpgrade: { channel, _ in channel.eventLoop.makeSucceededFuture([:]) },
+                    upgradePipelineHandler: { channel, _ in
+                        WebSocket.server(on: channel) { socket in serverSocket.succeed(socket) }
+                    }
+                )
+                return channel.pipeline.configureHTTPServerPipeline(
+                    withServerUpgrade: (upgraders: [upgrader], completionHandler: { _ in })
+                )
+            }
+            .bind(host: "127.0.0.1", port: 0).get()
+        let port = try XCTUnwrap(server.localAddress?.port)
+        let transport = WebSocketTransport(accessTokenFactory: nil, logger: logger, headers: [:])
+        let recorder = FrameOrderRecorder()
+        let received = expectation(description: "Messages complete in wire order before close")
+        received.expectedFulfillmentCount = 4
+        await transport.onReceive { data in
+            switch data {
+            case .string(let text):
+                if text == "first" { try? await Task.sleep(nanoseconds: 100_000_000) }
+                await recorder.append(text)
+            case .data(let bytes):
+                await recorder.append(String(decoding: bytes, as: UTF8.self))
+            }
+            received.fulfill()
+        }
+        await transport.onClose { _ in
+            await recorder.append("closed")
+            received.fulfill()
+        }
+        var failure: Error?
+        do {
+            try await transport.connect(url: "http://127.0.0.1:\(port)", transferFormat: .text)
+            let socket = try await serverSocket.futureResult.get()
+            try await socket.eventLoop.submit {
+                socket.send("first")
+                socket.send("second")
+                var buffer = ByteBufferAllocator().buffer(capacity: 5)
+                buffer.writeString("third")
+                socket.send(buffer, opcode: .binary)
+                socket.close(promise: nil)
+            }.get()
+            await fulfillment(of: [received], timeout: 5)
+            let events = await recorder.events
+            XCTAssertEqual(events, ["first", "second", "third", "closed"])
+        } catch {
+            failure = error
+        }
+        await transport.onClose(nil)
+        try? await transport.stop(error: nil)
+        try? await server.close().get()
+        try await group.shutdownGracefully()
+        if let failure { throw failure }
+    }
+
+    #endif
 
     func testConnect() async throws {
         let url = "http://example.com"
@@ -124,3 +192,14 @@ class MockWebSocketConnection: WebSocketTransport.WebSocketConnection {
         await onCloseHandler?(error)
     }
 }
+
+#if os(Linux)
+private actor FrameOrderRecorder {
+    private(set) var events: [String] = []
+
+    func append(_ value: String) {
+        events.append(value)
+    }
+}
+
+#endif
