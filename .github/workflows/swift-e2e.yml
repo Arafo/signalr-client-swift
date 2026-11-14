@@ -9,38 +9,47 @@ on:
   pull_request:
     branches: [ "main", "dev" ]
 
+permissions:
+  contents: read
+
 jobs:
+  configuration:
+    runs-on: ubuntu-latest
+    outputs:
+      enabled: ${{ steps.credentials.outputs.enabled }}
+    steps:
+      - name: Check Azure E2E configuration
+        id: credentials
+        env:
+          CONNECTION_STRING: ${{ secrets.E2E_CONNECTION_STRING }}
+        run: |
+          if [[ -n "$CONNECTION_STRING" ]]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Azure E2E tests require the E2E_CONNECTION_STRING secret; local integration tests run in the Swift workflow."
+          fi
+
   E2ETest:
+    needs: configuration
+    if: needs.configuration.outputs.enabled == 'true'
     name: E2E Test on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
     strategy:
       matrix:
-        os: [macos-14]
+        os: [macos-15]
 
     steps:
     - uses: actions/checkout@v4
-    - uses: swift-actions/setup-swift@v2
-      with:
-        swift-version: "5.10"
-
-    - name: Check Connection String
-      run: |
-        echo "Connection string length: ${#CONNECTION_STRING}"
-        if [ ${#CONNECTION_STRING} -gt 20 ]; then
-          echo "✅ Connection string looks valid"
-          echo "Starts with: ${CONNECTION_STRING:0:20}..."
-        else
-          echo "❌ Connection string still too short or empty"
-          exit 1
-        fi
-      env:
-        CONNECTION_STRING: ${{ secrets.E2E_CONNECTION_STRING }}
 
     - name: Get swift version
       run: swift --version
 
     - name: Install .NET
-      uses: actions/setup-dotnet@v3
+      uses: actions/setup-dotnet@v4
       with:
         dotnet-version: '8.x'
 
@@ -61,4 +70,4 @@ jobs:
     - name: Run E2E tests
       env:
         SIGNALR_INTEGRATION_TEST_URL: http://localhost:8080/test
-      run: swift test --filter SignalRClientIntegrationTests
+      run: swift test --jobs 2 --filter SignalRClientIntegrationTests

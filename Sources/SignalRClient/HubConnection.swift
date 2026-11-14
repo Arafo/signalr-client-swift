@@ -38,6 +38,7 @@ public actor HubConnection {
     private var startTask: Task<Void, Error>?
     private var startSuccessfully = false
     private var reconnectDelayTask: Task<Void, Never>?
+    private var invocationDispatchTask: Task<Void, Never>?
 
     internal init(connection: ConnectionProtocol,
                   logger: Logger,
@@ -459,7 +460,15 @@ public actor HubConnection {
                         continue
                     }
                 }
-                await dispatchMessage(message)
+                if message is InvocationMessage {
+                    let previousInvocation = invocationDispatchTask
+                    invocationDispatchTask = Task { [weak self] in
+                        await previousInvocation?.value
+                        await self?.dispatchMessage(message)
+                    }
+                } else {
+                    await dispatchMessage(message)
+                }
             }
         } catch {
             logger.log(level: .error, message: "Error parsing messages: \(error)")
@@ -478,6 +487,10 @@ public actor HubConnection {
             } catch {
                 logger.log(level: .error, message: "Error invoking method: \(error)")
             }
+            break
+        case let message as InvocationBindingFailureMessage:
+            await invocationHandler.cancel(invocationId: message.invocationId, error: SignalRError.invalidOperation(message.error))
+            invocationBinder.removeReturnValueType(invocationId: message.invocationId)
             break
         case let message as StreamItemMessage:
             logger.log(level: .debug, message: "Stream item message received for invocation: \(message.invocationId!)")

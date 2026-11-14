@@ -13,34 +13,34 @@ jobs:
   buildAndUnitTest:
     name: Swift on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
     strategy:
       matrix:
-        os: [macos-14]
+        os: [macos-15]
     steps:
     - uses: actions/checkout@v4
-    - uses: swift-actions/setup-swift@v2
-      with:
-        swift-version: "5.10"
     - name: Get swift version
       run: swift --version
     - name: Build and Run tests
-      run: swift test --filter SignalRClientTests
+      run: swift test --jobs 2 --filter SignalRClientTests
 
   integrationTest:
     name: Integration Test on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
     strategy:
       matrix:
-        os: [macos-14]
+        os: [macos-15]
     steps:
     - uses: actions/checkout@v4
-    - uses: swift-actions/setup-swift@v2
-      with:
-        swift-version: "5.10"
     - name: Get swift version
       run: swift --version
     - name: Install .NET
-      uses: actions/setup-dotnet@v3
+      uses: actions/setup-dotnet@v4
       with:
         dotnet-version: '8.x'
     - name: Build .NET server
@@ -56,4 +56,4 @@ jobs:
     - name: Run integration tests
       env:
         SIGNALR_INTEGRATION_TEST_URL: http://localhost:8080/test
-      run: swift test --filter SignalRClientIntegrationTests
+      run: swift test --jobs 2 --filter SignalRClientIntegrationTests

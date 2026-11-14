@@ -82,12 +82,19 @@ actor WebSocketTransport: Transport {
 
 #if os(Linux)
     private actor DefaultWebSocketConnection: WebSocketConnection {
+        private enum ReceiveEvent: Sendable {
+            case message(StringOrData)
+            case closed(Error?)
+        }
+
         private let logger: Logger
         private let openTcs: TaskCompletionSource<Void> = TaskCompletionSource()
         private let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
         private var websocket: WebSocket?
         private var onReceive: OnReceiveHandler?
         private var onClose: OnCloseHander?
+        private var receiveTask: Task<Void, Never>?
+        private var receiveContinuation: AsyncStream<ReceiveEvent>.Continuation?
         
         init(
             logger: Logger
@@ -103,6 +110,19 @@ actor WebSocketTransport: Transport {
             let config = WebSocketClient.Configuration(maxFrameSize: Int(Int32.max) - 1)
             logger.log(level: .debug, message: "*** Test ***")
             logger.log(level: .debug, message: "(WebSockets transport) Connecting to \(url) with transfer format \(transferFormat).")
+            let incoming = AsyncStream<ReceiveEvent>.makeStream()
+            receiveContinuation = incoming.continuation
+            receiveTask = Task { [weak self] in
+                for await event in incoming.stream {
+                    guard let self else { break }
+                    switch event {
+                    case .message(let data):
+                        await self.onReceive?(data)
+                    case .closed(let error):
+                        await self.onClose?(error)
+                    }
+                }
+            }
             //            try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
             do {
             try await WebSocket.connect(
@@ -124,33 +144,30 @@ actor WebSocketTransport: Transport {
                     }
                 }
                 
-                socket.onText { [weak self] _, text in
-                    guard let self = self else { return }
-                    await self.onReceive?(.string(text))
-                    //Task { await self.onReceive?(.string(text)) }
+                let receiveText: @Sendable (WebSocket, String) -> Void = { _, text in
+                    incoming.continuation.yield(.message(.string(text)))
                 }
-                socket.onBinary { [weak self] _, buffer in
-                    guard let self = self else { return }
-                    let data = Data(buffer.readableBytesView)
-                    await self.onReceive?(.data(data))
-                    //Task { await self.onReceive?(.data(data)) }
+                let receiveBinary: @Sendable (WebSocket, ByteBuffer) -> Void = { _, buffer in
+                    incoming.continuation.yield(.message(.data(Data(buffer.readableBytesView))))
                 }
+                socket.onText(receiveText)
+                socket.onBinary(receiveBinary)
                 
-                socket.onClose.whenComplete { [weak self] result in
-                    guard let self = self else { return }
+                socket.onClose.whenComplete { [logger = self.logger] result in
                     logger.log(level: .debug, message: "(WebSockets transport) WebSocket closed")
-                    Task {
-                        switch result {
-                        case .success:
-                            await self.onClose?(nil)
-                        case .failure(let error):
-                            await self.onClose?(error)
-                        }
+                    switch result {
+                    case .success:
+                        incoming.continuation.yield(.closed(nil))
+                    case .failure(let error):
+                        incoming.continuation.yield(.closed(error))
                     }
+                    incoming.continuation.finish()
                 }
             }.get()
             //.wait()
             } catch {
+                incoming.continuation.finish()
+                receiveTask?.cancel()
                 logger.log(level: .error, message: "(WebSockets transport) WebSocket connect error")
                 //try? await stop(error: error)
                             if await openTcs.trySetResult(.failure(error ?? SignalRError.connectionAborted)) == true {
@@ -211,6 +228,10 @@ actor WebSocketTransport: Transport {
         
         func stop(error: Error?) async throws {
             logger.log(level: .debug, message: "(WebSockets transport) Stopping")
+            receiveContinuation?.finish()
+            receiveTask?.cancel()
+            receiveContinuation = nil
+            receiveTask = nil
             if let websocket = self.websocket {
                 try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
                     let promise = websocket.eventLoop.makePromise(of: Void.self)

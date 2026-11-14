@@ -18,6 +18,32 @@ final class JsonHubProtocolTests: XCTestCase {
         super.tearDown()
     }
 
+    func testWrongCompletionTypePreservesInvocationFailureAndFollowingMessage() throws {
+        let input = "{\"type\":3,\"invocationId\":\"bad\",\"result\":\"wrong\"}\u{1e}{\"type\":3,\"invocationId\":\"good\",\"result\":42}\u{1e}"
+        let messages = try jsonHubProtocol.parseMessages(input: .string(input), binder: TestInvocationBinder(binderTypes: [Int.self]))
+        XCTAssertEqual(messages.count, 2)
+        let failure = try XCTUnwrap(messages.first as? InvocationBindingFailureMessage)
+        XCTAssertEqual(failure.invocationId, "bad")
+        XCTAssertEqual(failure.type, .completion)
+        XCTAssertEqual(failure.error, "Cannot convert the result of the invocation to the specified type.")
+        let valid = try XCTUnwrap(messages.last as? CompletionMessage)
+        XCTAssertEqual(valid.invocationId, "good")
+        XCTAssertEqual(valid.result.value as? Int, 42)
+    }
+
+    func testWrongStreamItemTypePreservesInvocationFailureAndFollowingMessage() throws {
+        let input = "{\"type\":2,\"invocationId\":\"bad\",\"item\":\"wrong\"}\u{1e}{\"type\":2,\"invocationId\":\"good\",\"item\":42}\u{1e}"
+        let messages = try jsonHubProtocol.parseMessages(input: .string(input), binder: TestInvocationBinder(binderTypes: [Int.self]))
+        XCTAssertEqual(messages.count, 2)
+        let failure = try XCTUnwrap(messages.first as? InvocationBindingFailureMessage)
+        XCTAssertEqual(failure.invocationId, "bad")
+        XCTAssertEqual(failure.type, .streamItem)
+        XCTAssertEqual(failure.error, "Cannot convert the result of the invocation to the specified type.")
+        let valid = try XCTUnwrap(messages.last as? StreamItemMessage)
+        XCTAssertEqual(valid.invocationId, "good")
+        XCTAssertEqual(valid.item.value as? Int, 42)
+    }
+
     func testParseInvocationMessage() throws {
         let input = "{\"type\": 1, \"target\": \"testTarget\", \"arguments\": [\"arg1\", 123]}\(TextMessageFormat.recordSeparator)" // JSON format for InvocationMessage
         let binder = TestInvocationBinder(binderTypes: [String.self, Int.self])

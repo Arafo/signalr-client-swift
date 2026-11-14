@@ -1,0 +1,30 @@
+name: Linux WebSocket transport
+
+on:
+  push:
+    paths:
+      - Sources/SignalRClient/**
+      - Tests/SignalRClientTests/WebSocketTransportTests.swift
+      - Package.swift
+      - .github/workflows/linux-transport.yml
+  pull_request:
+    paths:
+      - Sources/SignalRClient/**
+      - Tests/SignalRClientTests/WebSocketTransportTests.swift
+      - Package.swift
+      - .github/workflows/linux-transport.yml
+
+permissions:
+  contents: read
+
+jobs:
+  transport:
+    runs-on: ubuntu-latest
+    container: swift:6.3-noble
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Run unit tests including transport and hub regressions
+        run: swift test --jobs 2 --filter SignalRClientTests
