@@ -14,14 +14,13 @@ jobs:
     name: Swift on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
     strategy:
       matrix:
         os: [macos-15]
     steps:
     - uses: actions/checkout@v4
-    - uses: swift-actions/setup-swift@v2
-      with:
-        swift-version: "6.3"
     - name: Get swift version
       run: swift --version
     - name: Build and Run tests
@@ -31,14 +30,13 @@ jobs:
     name: Integration Test on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
     strategy:
       matrix:
         os: [macos-15]
     steps:
     - uses: actions/checkout@v4
-    - uses: swift-actions/setup-swift@v2
-      with:
-        swift-version: "6.3"
     - name: Get swift version
       run: swift --version
     - name: Install .NET
