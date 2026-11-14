@@ -26,5 +26,5 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - name: Run WebSocket transport and hub handler regressions
-        run: swift test --jobs 2 --filter 'WebSocketTransportTests|HubConnectionOn'
+      - name: Run unit tests including transport and hub regressions
+        run: swift test --jobs 2 --filter SignalRClientTests

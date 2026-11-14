@@ -102,27 +102,33 @@ struct JsonHubProtocol: HubProtocol {
         return StreamInvocationMessage(invocationId: invocationId, target: target, arguments: typedArguments, streamIds: streamIds, headers: headers)
     }
 
-    private func DecodeStreamItemMessage(_ jsonObject: [String: Any], binder: InvocationBinder) throws -> StreamItemMessage {
+    private func DecodeStreamItemMessage(_ jsonObject: [String: Any], binder: InvocationBinder) throws -> HubMessage {
         guard let invocationId = jsonObject["invocationId"] as? String else {
             throw SignalRError.invalidData("'invocationId' not found in JSON object for StreamItemMessage.")
         }
 
         let headers = jsonObject["headers"] as? [String: String]
-        let typedItem = try DecodeStreamItem(jsonObject, type: binder.getStreamItemType(streamId: invocationId))
-
-        return StreamItemMessage(invocationId: invocationId, item: typedItem, headers: headers)
+        do {
+            let typedItem = try DecodeStreamItem(jsonObject, type: binder.getStreamItemType(streamId: invocationId))
+            return StreamItemMessage(invocationId: invocationId, item: typedItem, headers: headers)
+        } catch {
+            return InvocationBindingFailureMessage(type: .streamItem, invocationId: invocationId, error: "Cannot convert the result of the invocation to the specified type.")
+        }
     }
 
-    private func DecodeCompletionMessage(_ jsonObject: [String: Any], binder: InvocationBinder) throws -> CompletionMessage {
+    private func DecodeCompletionMessage(_ jsonObject: [String: Any], binder: InvocationBinder) throws -> HubMessage {
         guard let invocationId = jsonObject["invocationId"] as? String else {
             throw SignalRError.invalidData("'invocationId' not found in JSON object for CompletionMessage.")
         }
 
         let headers = jsonObject["headers"] as? [String: String]
         let error = jsonObject["error"] as? String
-        let result = try DecodeCompletionResult(jsonObject, type: binder.getReturnType(invocationId: invocationId))
-
-        return CompletionMessage(invocationId: invocationId, error: error, result: result, headers: headers)
+        do {
+            let result = try DecodeCompletionResult(jsonObject, type: binder.getReturnType(invocationId: invocationId))
+            return CompletionMessage(invocationId: invocationId, error: error, result: result, headers: headers)
+        } catch {
+            return InvocationBindingFailureMessage(type: .completion, invocationId: invocationId, error: "Cannot convert the result of the invocation to the specified type.")
+        }
     }
 
     private func DecodeCancelInvocationMessage(_ jsonObject: [String: Any]) throws -> CancelInvocationMessage {

@@ -488,6 +488,10 @@ public actor HubConnection {
                 logger.log(level: .error, message: "Error invoking method: \(error)")
             }
             break
+        case let message as InvocationBindingFailureMessage:
+            await invocationHandler.cancel(invocationId: message.invocationId, error: SignalRError.invalidOperation(message.error))
+            invocationBinder.removeReturnValueType(invocationId: message.invocationId)
+            break
         case let message as StreamItemMessage:
             logger.log(level: .debug, message: "Stream item message received for invocation: \(message.invocationId!)")
             await invocationHandler.setStreamItem(message: message)

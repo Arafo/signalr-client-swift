@@ -73,6 +73,12 @@ struct CompletionMessage: HubInvocationMessage {
     let headers: [String: String]?
 }
 
+struct InvocationBindingFailureMessage: HubMessage {
+    let type: MessageType
+    let invocationId: String
+    let error: String
+}
+
 /// A hub message indicating that the sender is still active.
 struct PingMessage: HubMessage {
     /// The type of this message.
