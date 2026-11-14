@@ -25,6 +25,77 @@ class WebSocketTransportTests: XCTestCase {
     }
 
     #if os(Linux)
+    func testHubHandlerCanAwaitInvocationWithoutReorderingFollowingHandlers() async throws {
+        let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
+        let serverSocket = group.next().makePromise(of: WebSocket.self)
+        let server = try await ServerBootstrap(group: group)
+            .childChannelInitializer { channel in
+                let upgrader = NIOWebSocketServerUpgrader(
+                    shouldUpgrade: { channel, _ in channel.eventLoop.makeSucceededFuture([:]) },
+                    upgradePipelineHandler: { channel, _ in
+                        WebSocket.server(on: channel) { socket in
+                            socket.onText { socket, text in
+                                if text.contains("\"protocol\"") {
+                                    socket.send("{}\u{1e}")
+                                } else if let data = text.split(separator: "\u{1e}").first?.data(using: .utf8),
+                                          let message = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                                          message["target"] as? String == "nested",
+                                          let id = message["invocationId"] as? String {
+                                    socket.send("{\"type\":1,\"target\":\"callback\",\"arguments\":[\"third\"]}\u{1e}{\"type\":3,\"invocationId\":\"\(id)\",\"result\":42}\u{1e}")
+                                }
+                            }
+                            serverSocket.succeed(socket)
+                        }
+                    }
+                )
+                return channel.pipeline.configureHTTPServerPipeline(
+                    withServerUpgrade: (upgraders: [upgrader], completionHandler: { _ in })
+                )
+            }
+            .bind(host: "127.0.0.1", port: 0).get()
+        let port = try XCTUnwrap(server.localAddress?.port)
+        var options = HttpConnectionOptions()
+        options.transport = .webSockets
+        options.skipNegotiation = true
+        let hub = HubConnectionBuilder()
+            .withUrl(url: "http://127.0.0.1:\(port)", options: options)
+            .withLogLevel(logLevel: .error)
+            .build()
+        let recorder = FrameOrderRecorder()
+        let handled = expectation(description: "Nested invocation completes before subsequent handlers")
+        handled.expectedFulfillmentCount = 3
+        await hub.on("callback") { (value: String) in
+            if value == "first" {
+                do {
+                    let result: Int = try await hub.invoke(method: "nested")
+                    XCTAssertEqual(result, 42)
+                } catch {
+                    XCTFail("Nested invocation failed: \(error)")
+                }
+            }
+            await recorder.append(value)
+            handled.fulfill()
+        }
+        var failure: Error?
+        do {
+            try await hub.start()
+            let socket = try await serverSocket.futureResult.get()
+            try await socket.eventLoop.submit {
+                socket.send("{\"type\":1,\"target\":\"callback\",\"arguments\":[\"first\"]}\u{1e}{\"type\":1,\"target\":\"callback\",\"arguments\":[\"second\"]}\u{1e}")
+            }.get()
+            await fulfillment(of: [handled], timeout: 3)
+            let events = await recorder.events
+            XCTAssertEqual(events, ["first", "second", "third"])
+        } catch {
+            failure = error
+        }
+        await hub.processIncomingData(.string("{\"type\":3,\"invocationId\":\"1\",\"result\":42}\u{1e}"))
+        await hub.stop()
+        try? await server.close().get()
+        try await group.shutdownGracefully()
+        if let failure { throw failure }
+    }
+
     func testReceivePreservesWireOrderWhenHandlerSuspendsAndSocketCloses() async throws {
         let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
         let serverSocket = group.next().makePromise(of: WebSocket.self)
