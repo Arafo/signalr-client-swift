@@ -774,15 +774,17 @@ final class HubConnectionTests: XCTestCase {
         
         // Wait for Ack message to be sent using delayUntil
         try await delayUntil(timeout: 2.0) {
-            return self.mockConnection.sentData.count == self.sentPingCount + 2;
+            guard let messages = try? getParsedData(data: self.mockConnection.sentData, binder: TestInvocationBinder(binderTypes: [Int.self])) else {
+                return false
+            }
+            return messages.contains { ($0 as? AckMessage)?.sequenceId == 1 }
         }
 
         let parsedSentData = try getParsedData(data: mockConnection.sentData, binder: TestInvocationBinder(binderTypes: [Int.self]))
         let messages = removeAllPingMessages(messages: parsedSentData)
         
-        XCTAssertNotNil(messages, "Ack message should be sent")
-        XCTAssertTrue(messages.last is AckMessage);
-        XCTAssertEqual((messages.last as! AckMessage).sequenceId, 1)
+        let acknowledgment = try XCTUnwrap(messages.compactMap { $0 as? AckMessage }.last)
+        XCTAssertEqual(acknowledgment.sequenceId, 1)
     }
 
     func testStatefulReconnect_sendsAckAfterReceivingManyMessages() async throws {
@@ -808,7 +810,10 @@ final class HubConnectionTests: XCTestCase {
         // Wait for Ack message to be sent using delayUntil
         try await delayUntil(timeout: 2.0) {
             // `sentData` contains {"protocol":"json","version":2} and {"type":8,"sequenceId":4} at least.
-            return self.mockConnection.sentData.count == self.sentPingCount + 2;
+            guard let messages = try? getParsedData(data: self.mockConnection.sentData, binder: TestInvocationBinder(binderTypes: [Int.self])) else {
+                return false
+            }
+            return messages.contains { ($0 as? AckMessage)?.sequenceId == 4 }
         }
 
         let parsedSentData = try getParsedData(data: mockConnection.sentData, binder: TestInvocationBinder(binderTypes: [Int.self]))
